@@ -2,38 +2,54 @@ from enum import Enum
 
 
 class Color(str, Enum):
-    # TODO: define card colors
-    pass
+    RED = "RED"
+    GREEN = "GREEN"
+    BLUE = "BLUE"
+    YELLOW = "YELLOW"
+    WILD = "WILD"
 
 
 class CardType(str, Enum):
-    # TODO: define card types
-    pass
+    NUMBER = "NUMBER"
+    SKIP = "SKIP"
+    REVERSE = "REVERSE"
+    DRAW_TWO = "DRAW_TWO"
+    WILD = "WILD"
+    WILD_DRAW_FOUR = "WILD_DRAW_FOUR"
 
 
 class Card:
     def __init__(self, color, card_type, value=None):
-        # TODO: store color
-        # TODO: store card type
-        # TODO: store value for number cards
-        pass
+        self.color = color
+        self.card_type = card_type
+        self.value = value  # int 0-9 for number cards, None otherwise
 
     def is_number_card(self):
-        # TODO: return True if this is a number card
-        pass
+        return self.card_type == CardType.NUMBER
 
     def is_action_card(self):
-        # TODO: return True if this is an action/special card
-        pass
+        return self.card_type in (CardType.SKIP, CardType.REVERSE, CardType.DRAW_TWO)
 
     def is_wild_card(self):
-        # TODO: return True if this is Wild or Wild Draw Four
-        pass
+        return self.card_type in (CardType.WILD, CardType.WILD_DRAW_FOUR)
 
     def penalty_value(self):
-        # TODO: return 2 for Draw Two, 4 for Wild Draw Four, otherwise 0
-        pass
+        if self.card_type == CardType.DRAW_TWO:
+            return 2
+        if self.card_type == CardType.WILD_DRAW_FOUR:
+            return 4
+        return 0
 
-    def __repr__(self): # type: ignore
-        # TODO: return readable card name
-        pass
+    def to_dict(self):
+        return {
+            "color": self.color.value,
+            "type": self.card_type.value,
+            "value": self.value,
+        }
+
+    def __repr__(self):
+        if self.is_wild_card():
+            return self.card_type.value
+        if self.is_number_card():
+            return f"{self.color.value} {self.value}"
+        return f"{self.color.value} {self.card_type.value}"
