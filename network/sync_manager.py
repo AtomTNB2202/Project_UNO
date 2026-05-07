@@ -40,6 +40,7 @@ class SyncManager:
                 "room_code": room.room_code,
                 "host_id": room.host_id,
                 "players": room.get_player_list(),
+                "settings": getattr(room, "settings", {}),
             },
         )
         self.broadcast_to_room(room, message)

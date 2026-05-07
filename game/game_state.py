@@ -15,7 +15,7 @@ except ImportError:
 
 
 class GameState:
-    def __init__(self, players=None):
+    def __init__(self, players=None, settings=None):
         self.players = []
         self.deck = Deck()
         self.turn_manager = TurnManager()
@@ -26,6 +26,12 @@ class GameState:
         self.winner = None      # dict {"player_id": ..., "name": ...}
         self.winner_id = None   # str — used by server._extract_winner_id
         self._rule_eight = RuleEight()
+        self.last_notification = None
+
+        s = settings or {}
+        self.rule_0_enabled = s.get("rule_0", True)
+        self.rule_7_enabled = s.get("rule_7", True)
+        self.rule_8_enabled = s.get("rule_8", True)
 
         if players:
             # Server passes player_ids (list of strings) first; raise TypeError
@@ -51,7 +57,36 @@ class GameState:
         self.players.append(Player(player_id, name))
 
     def remove_player(self, player_id):
-        self.players = [p for p in self.players if p.player_id != player_id]
+        index = self.find_player_index(player_id)
+        if index == -1:
+            return None
+
+        removed = self.players.pop(index)
+
+        if hasattr(self._rule_eight, "remove_player"):
+            self._rule_eight.remove_player(player_id)
+
+        if self.players:
+            current_index = self.turn_manager.current_player_index()
+            direction = getattr(self.turn_manager, "_direction", 1)
+            if index < current_index:
+                self.turn_manager._current_index = current_index - 1
+            elif index == current_index:
+                if direction == -1:
+                    self.turn_manager._current_index = (index - 1) % len(self.players)
+                elif current_index >= len(self.players):
+                    self.turn_manager._current_index = 0
+
+        if self.started:
+            self.last_notification = f"{removed.name} left the game."
+            if len(self.players) == 1 and not self.winner_id:
+                winner = self.players[0]
+                self.winner = {"player_id": winner.player_id, "name": winner.name}
+                self.winner_id = winner.player_id
+                self._rule_eight.reset()
+                self.last_notification = f"{winner.name} wins because everyone else left."
+
+        return removed
 
     def can_start(self):
         return MIN_PLAYERS <= len(self.players) <= MAX_PLAYERS
@@ -110,6 +145,7 @@ class GameState:
         zero_direction=None,
         seven_target_id=None,
     ):
+        self.last_notification = None
         if not self.started:
             raise ValueError("Game has not started.")
         current = self.get_current_player()
@@ -139,13 +175,17 @@ class GameState:
         else:
             self.current_color = played_card.color.value
 
-        effect = self.apply_card_effect(
-            played_card, player_id, chosen_color, zero_direction, seven_target_id
-        )
-
+        # Check win BEFORE applying effects — swap/pass rules would alter hand
+        # sizes and give the winner new cards, preventing correct detection.
         if current.has_no_cards():
             self.winner = {"player_id": player_id, "name": current.name}
             self.winner_id = player_id
+            self.turn_manager.next_turn(len(self.players))
+            effect = {"effect": "WIN"}
+        else:
+            effect = self.apply_card_effect(
+                played_card, player_id, chosen_color, zero_direction, seven_target_id
+            )
 
         return {
             "played_card": played_card.to_dict(),
@@ -155,6 +195,7 @@ class GameState:
         }
 
     def draw_card(self, player_id):
+        self.last_notification = None
         if not self.started:
             raise ValueError("Game has not started.")
         current = self.get_current_player()
@@ -235,23 +276,18 @@ class GameState:
             }
 
         if card.card_type == CardType.NUMBER:
-            if card.value == 0:
-                direction = zero_direction
-                # Quick-and-dirty: UI sends chosen_color as proxy (RED=CW, else=CCW)
-                if direction is None and chosen_color:
-                    direction = "CLOCKWISE" if chosen_color == "RED" else "COUNTER_CLOCKWISE"
-                if direction:
-                    result = self.apply_rule_zero(direction)
-                    self.turn_manager.next_turn(n)
-                    return {"effect": "RULE_ZERO", **result}
+            if card.value == 0 and self.rule_0_enabled:
+                direction = zero_direction or self.turn_manager.get_direction_text()
+                result = self.apply_rule_zero(direction)
+                self.turn_manager.next_turn(n)
+                return {"effect": "RULE_ZERO", **result}
 
-            elif card.value == 7:
-                if seven_target_id:
-                    result = self.apply_rule_seven(player_id, seven_target_id)
-                    self.turn_manager.next_turn(n)
-                    return {"effect": "RULE_SEVEN", **result}
+            elif card.value == 7 and self.rule_7_enabled and seven_target_id:
+                result = self.apply_rule_seven(player_id, seven_target_id)
+                self.turn_manager.next_turn(n)
+                return {"effect": "RULE_SEVEN", **result}
 
-            elif card.value == 8:
+            elif card.value == 8 and self.rule_8_enabled:
                 event_result = self.start_reaction_event(player_id)
                 self.turn_manager.next_turn(n)
                 return {"effect": "RULE_EIGHT", "reaction_started": event_result}
@@ -278,13 +314,26 @@ class GameState:
 
     def submit_reaction(self, player_id):
         result = self._rule_eight.submit_response(player_id)
-        if self._rule_eight.is_timeout():
+        if self._rule_eight.all_responded() or self._rule_eight.is_timeout():
             reaction_result = self.finish_reaction_event()
             return {"submit": result, "reaction_result": reaction_result}
         return {"submit": result}
 
     def finish_reaction_event(self):
-        return self._rule_eight.finish_event(self.players, self.deck)
+        result = self._rule_eight.finish_event(self.players, self.deck)
+        penalized_ids = result.get("penalized", []) if isinstance(result, dict) else []
+        if penalized_ids:
+            names = [
+                p.name
+                for p in self.players
+                if p.player_id in penalized_ids
+            ]
+            if len(names) == 1:
+                self.last_notification = f"Rule 8: {names[0]} draws 2 cards."
+            else:
+                self.last_notification = f"Rule 8: {', '.join(names)} draw 2 cards."
+            result["penalized_names"] = names
+        return result
 
     # ------------------------------------------------------------------
     # Serialization
@@ -305,4 +354,10 @@ class GameState:
             "pending_penalty": self.pending_penalty,
             "winner": self.winner,
             "started": self.started,
+            "last_notification": self.last_notification,
+            "settings": {
+                "rule_0": self.rule_0_enabled,
+                "rule_7": self.rule_7_enabled,
+                "rule_8": self.rule_8_enabled,
+            },
         }

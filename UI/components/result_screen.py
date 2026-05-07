@@ -19,13 +19,28 @@ class ResultScreen:
         self.is_winner = False
         self._btn_menu = None
         self._btn_quit = None
-
-    def set_result(self, winner_id, players, my_id):
+    
+    def set_result(self, winner_data, players, my_id):
         self.visible = True
-        winner = next((p for p in players if p["player_id"] == winner_id), None)
-        self.winner_name = winner["name"] if winner else "Unknown"
+
+        if isinstance(winner_data, dict):
+            winner_id = winner_data.get("player_id", "")
+            self.winner_name = winner_data.get("name", "Unknown")
+        else:
+            winner_id = winner_data
+            winner = next((p for p in players if p.get("player_id") == winner_id), None)
+            self.winner_name = winner.get("name", "Unknown") if winner else "Unknown"
+
         self.is_winner = (winner_id == my_id)
+
         self._build_buttons()
+
+    def hide(self):
+        self.visible = False
+        self.winner_name = ""
+        self.is_winner = False
+        self._btn_menu = None
+        self._btn_quit = None
 
     def render(self, surface):
         if not self.visible:
@@ -44,7 +59,7 @@ class ResultScreen:
         pygame.draw.rect(surface, PANEL_EDGE, panel, 2, border_radius=16)
 
         # Trophy line
-        trophy = "🏆" if self.is_winner else "🃏"
+        trophy = "[WINNER]" if self.is_winner else "[LOSE]"
         headline = f"{trophy}  {self.winner_name} wins!"
         hl_surf = _t.F_UI_LG.render(headline, True,
                                   GLOW_SELECT if self.is_winner else TEXT_LIGHT)

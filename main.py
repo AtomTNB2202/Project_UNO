@@ -17,7 +17,6 @@ def main():
         sys.exit(1)
 
     try:
-        from network.client import Client
         from UI.ui_manager import UIManager
     except ImportError as error:
         print("Import error:", error)
@@ -35,7 +34,6 @@ def main():
 
     clock = pygame.time.Clock()
 
-    client = Client()
     ui_manager = UIManager()
 
     running = True
@@ -57,7 +55,7 @@ def main():
         clock.tick(FPS)
 
     try:
-        client.disconnect()
+        ui_manager.disconnect()
     except Exception:
         pass
 

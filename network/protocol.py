@@ -25,6 +25,7 @@ class MessageType:
     JOIN_ROOM = "JOIN_ROOM"
     LEAVE_ROOM = "LEAVE_ROOM"
     START_GAME = "START_GAME"
+    UPDATE_SETTINGS = "UPDATE_SETTINGS"
 
     # Gameplay events: client -> server
     PLAY_CARD = "PLAY_CARD"

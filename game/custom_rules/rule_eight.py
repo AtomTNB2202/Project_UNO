@@ -38,8 +38,13 @@ class RuleEight:
             return {"success": False, "reason": "Player is not part of this event."}
         if player_id in self.responses:
             return {"success": False, "reason": "Already responded."}
+        if self.is_timeout():
+            return {"success": False, "reason": "Response window has expired."}
         self.responses[player_id] = time.time()
         return {"success": True, "player_id": player_id}
+
+    def all_responded(self):
+        return self.active and len(self.responses) == len(self.player_ids)
 
     def is_timeout(self):
         if self.start_time is None:
@@ -48,6 +53,11 @@ class RuleEight:
 
     def get_missing_players(self):
         return [pid for pid in self.player_ids if pid not in self.responses]
+
+    def remove_player(self, player_id):
+        if player_id in self.player_ids:
+            self.player_ids.remove(player_id)
+        self.responses.pop(player_id, None)
 
     def get_latest_responders(self):
         missing = self.get_missing_players()
@@ -69,6 +79,7 @@ class RuleEight:
         self.reset()
         return {
             "penalized": penalized_ids,
+            "draw_count": 2,
         }
 
     def reset(self):

@@ -8,13 +8,15 @@ class MainMenu:
         btn_w, btn_h = 280, 52
         cx = W // 2
         self._buttons = {
-            "CREATE_ROOM": pygame.Rect(cx - btn_w // 2, H // 2 - 70, btn_w, btn_h),
-            "JOIN_ROOM":   pygame.Rect(cx - btn_w // 2, H // 2,       btn_w, btn_h),
-            "QUIT":        pygame.Rect(cx - btn_w // 2, H // 2 + 70,  btn_w, btn_h),
+            "CREATE_ROOM": pygame.Rect(cx - btn_w // 2, H // 2 - 105, btn_w, btn_h),
+            "JOIN_ROOM":   pygame.Rect(cx - btn_w // 2, H // 2 - 35,  btn_w, btn_h),
+            "RULES":       pygame.Rect(cx - btn_w // 2, H // 2 + 35,  btn_w, btn_h),
+            "QUIT":        pygame.Rect(cx - btn_w // 2, H // 2 + 105, btn_w, btn_h),
         }
         self._labels = {
             "CREATE_ROOM": "Create Room",
             "JOIN_ROOM":   "Join Room",
+            "RULES":       "How to Play",
             "QUIT":        "Quit",
         }
 

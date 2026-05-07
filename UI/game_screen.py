@@ -14,6 +14,7 @@ from UI.components.hand_view import HandView
 from UI.components.opponent_panel import OpponentPanel
 from UI.components.status_panel import StatusPanel
 from UI.components.popup_select_color import PopupSelectColor
+from UI.components.popup_select_direction import PopupSelectDirection
 from UI.components.popup_select_target import PopupSelectTarget
 from UI.components.reaction_button import ReactionButton
 from UI.components.result_screen import ResultScreen
@@ -24,12 +25,14 @@ class GameScreen:
         self.client = client
         self.my_id = getattr(client, "player_id", None)
         self.game_state = {}
+        self._settings = {"rule_0": True, "rule_7": True, "rule_8": True}
 
         self.hand_view      = HandView()
         self.opp_panel      = OpponentPanel()
         self.status_panel   = StatusPanel()
-        self.popup_color    = PopupSelectColor()
-        self.popup_target   = PopupSelectTarget()
+        self.popup_color     = PopupSelectColor()
+        self.popup_direction = PopupSelectDirection()
+        self.popup_target    = PopupSelectTarget()
         self.reaction_btn   = ReactionButton()
         self.result_screen  = ResultScreen()
 
@@ -38,13 +41,35 @@ class GameScreen:
         self._draw_btn = pygame.Rect(PLAY_CX - 140 - _bw // 2, PLAY_CY - _bh // 2, _bw, _bh)
 
         self._selected_card_index = None
-        self._pending_card_type   = None    # "wild" | "zero" | "seven" | None
+        self._pending_card_type   = None    # "wild" | "seven" | None
+
+        self._notification_text  = ""
+        self._notification_timer = 0   # pygame.time.get_ticks() when last set
+        self._NOTIFICATION_MS    = 3000
+
+    # ------------------------------------------------------------------
+    def reset(self):
+        """Clear all state leftover from a previous game."""
+        self.game_state = {}
+        self._settings = {"rule_0": True, "rule_7": True, "rule_8": True}
+        self._selected_card_index = None
+        self._pending_card_type = None
+        self._notification_text = ""
+        self.result_screen.hide()
+        self.popup_color.hide()
+        self.popup_direction.hide()
+        self.popup_target.hide()
+        self.reaction_btn.hide()
+        self.hand_view.set_cards([])
+        self.opp_panel.set_opponents([])
 
     # ------------------------------------------------------------------
     def set_game_state(self, state):
         self.game_state = state
         if not state:
             return
+        if state.get("settings"):
+            self._settings = state["settings"]
 
         my_data = next((p for p in state["players"] if p["player_id"] == self.my_id), None)
         hand = my_data.get("hand", []) if my_data else []
@@ -56,6 +81,13 @@ class GameScreen:
 
         if state.get("winner"):
             self.result_screen.set_result(state["winner"], state["players"], self.my_id)
+
+        notif = state.get("last_notification")
+        if notif:
+            self._notification_text  = notif
+            self._notification_timer = pygame.time.get_ticks()
+        else:
+            self._notification_text = ""
 
     # ------------------------------------------------------------------
     def render(self, surface):
@@ -76,9 +108,11 @@ class GameScreen:
 
         # Popups (highest priority, drawn last)
         self.popup_color.render(surface)
+        self.popup_direction.render(surface)
         self.popup_target.render(surface)
         self.reaction_btn.render(surface)
         self.result_screen.render(surface)
+        self._render_notification(surface)
 
     # ------------------------------------------------------------------
     def handle_event(self, event):
@@ -86,11 +120,18 @@ class GameScreen:
         action = self.result_screen.handle_event(event)
         if action:
             return action   # "menu" or "quit" — let caller handle
+        if self.result_screen.visible:
+            return None     # Block all other interactions when game is over
 
         # Popups
         chosen_color = self.popup_color.handle_event(event)
         if chosen_color is not None:
             self._send_play(chosen_color=chosen_color)
+            return None
+
+        chosen_direction = self.popup_direction.handle_event(event)
+        if chosen_direction is not None:
+            self._send_play(zero_direction=chosen_direction)
             return None
 
         target_id = self.popup_target.handle_event(event)
@@ -112,8 +153,12 @@ class GameScreen:
         # Hand card click
         clicked_index = self.hand_view.handle_event(event)
         if clicked_index is not None:
+            # If a popup is open, clicking a different card cancels it
+            if self.popup_color.visible or self.popup_direction.visible:
+                self.popup_color.hide()
+                self.popup_direction.hide()
+                self._pending_card_type = None
             self._selected_card_index = clicked_index
-            # Second click on same card = try to play
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self._selected_card_index is not None:
                 self.request_play_card(self._selected_card_index)
@@ -143,13 +188,23 @@ class GameScreen:
             self.popup_color.show()
 
         elif ctype == "NUMBER" and cval == 0:
-            self._pending_card_type = "zero"
-            self._show_direction_popup()
+            if self._settings.get("rule_0", True):
+                self._pending_card_type = "zero"
+                self.popup_direction.show()
+            else:
+                self.client.play_card(card_index)
+                self.hand_view.clear_selection()
+                self._selected_card_index = None
 
         elif ctype == "NUMBER" and cval == 7:
-            self._pending_card_type = "seven"
-            opponents = [p for p in self.game_state["players"] if p["player_id"] != self.my_id]
-            self.popup_target.show(opponents)
+            if self._settings.get("rule_7", True):
+                self._pending_card_type = "seven"
+                opponents = [p for p in self.game_state["players"] if p["player_id"] != self.my_id]
+                self.popup_target.show(opponents)
+            else:
+                self.client.play_card(card_index)
+                self.hand_view.clear_selection()
+                self._selected_card_index = None
 
         else:
             self.client.play_card(card_index)
@@ -229,6 +284,36 @@ class GameScreen:
     def _draw_draw_button(self, surface=None):
         """The clickable area is set to the draw pile card back rect in _draw_piles."""
         pass
+
+    def _render_notification(self, surface):
+        if not self._notification_text:
+            return
+        elapsed = pygame.time.get_ticks() - self._notification_timer
+        if elapsed >= self._NOTIFICATION_MS:
+            self._notification_text = ""
+            return
+
+        # Fade out in the last 600ms
+        alpha = 255
+        fade_start = self._NOTIFICATION_MS - 600
+        if elapsed > fade_start:
+            alpha = int(255 * (1 - (elapsed - fade_start) / 600))
+
+        font = _t.F_UI_LG
+        text_surf = font.render(self._notification_text, True, (255, 255, 255))
+        tw, th = text_surf.get_size()
+        pad_x, pad_y = 28, 14
+        box_w, box_h = tw + pad_x * 2, th + pad_y * 2
+        bx = (surface.get_width() - box_w) // 2
+        by = surface.get_height() // 2 - 60
+
+        box = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+        box.fill((15, 20, 30, min(alpha, 210)))
+        pygame.draw.rect(box, (80, 200, 120, alpha), (0, 0, box_w, box_h), 2, border_radius=10)
+        surface.blit(box, (bx, by))
+
+        text_surf.set_alpha(alpha)
+        surface.blit(text_surf, (bx + pad_x, by + pad_y))
 
 
 def _draw_placeholder(surface, x, y, w, h, label):

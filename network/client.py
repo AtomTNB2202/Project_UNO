@@ -146,16 +146,24 @@ class Client:
         )
         self.room_code = None
 
-    def start_game(self):
-        """Send START_GAME request."""
+    def send_settings(self, settings: dict):
+        """Send updated house-rule settings to server (host only)."""
         self._require_room()
         self.send_message(
-            MessageType.START_GAME,
-            {
-                "room_code": self.room_code,
-                "player_id": self.player_id,
-            },
+            MessageType.UPDATE_SETTINGS,
+            {"room_code": self.room_code, "player_id": self.player_id, "settings": settings},
         )
+
+    def start_game(self, settings: Optional[dict] = None):
+        """Send START_GAME request with optional house-rule settings."""
+        self._require_room()
+        data = {
+            "room_code": self.room_code,
+            "player_id": self.player_id,
+        }
+        if settings:
+            data["settings"] = settings
+        self.send_message(MessageType.START_GAME, data)
 
     def play_card(
         self,

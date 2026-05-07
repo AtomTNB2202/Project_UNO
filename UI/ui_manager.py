@@ -7,6 +7,7 @@ from UI.main_menu import MainMenu
 from UI.room_screen import RoomScreen
 from UI.lobby_screen import LobbyScreen
 from UI.game_screen import GameScreen
+from UI.rules_screen import RulesScreen
 
 
 class UIManager:
@@ -24,6 +25,7 @@ class UIManager:
         self._screens["room_screen"] = RoomScreen(self.client)
         self._screens["lobby"]       = LobbyScreen(self.client)
         self._screens["game"]        = GameScreen(self.client)
+        self._screens["rules"]       = RulesScreen()
 
     def _setup_callbacks(self):
         self.client.on(MessageType.ROOM_CREATED,        self._on_room_created)
@@ -31,6 +33,8 @@ class UIManager:
         self.client.on(MessageType.PLAYER_LIST_UPDATED, self._on_player_list_updated)
         self.client.on(MessageType.GAME_STARTED,        self._on_game_started)
         self.client.on(MessageType.STATE_UPDATED,       self._on_state_updated)
+        self.client.on(MessageType.INVALID_ACTION,      self._on_invalid_action)
+        self.client.on(MessageType.ERROR,               self._on_error)
         self.client.on(MessageType.REACTION_STARTED,    self._on_reaction_started)
         self.client.on(MessageType.REACTION_RESULT,     self._on_reaction_result)
         self.client.on(MessageType.GAME_ENDED,          self._on_game_ended)
@@ -59,10 +63,12 @@ class UIManager:
             self._try_connect()
             self._screens["room_screen"].set_mode("JOIN")
             self.switch_screen("room_screen")
+        elif action == "RULES":
+            self.switch_screen("rules")
         elif action == "QUIT":
             pygame.event.post(pygame.event.Event(pygame.QUIT))
 
-        # Room screen
+        # Rules / room screen back
         elif action == "BACK":
             self.switch_screen("main_menu")
         elif action == "SUBMITTED":
@@ -80,6 +86,9 @@ class UIManager:
 
     def update(self):
         pass
+
+    def disconnect(self):
+        self.client.disconnect()
 
     # ------------------------------------------------------------------
     # Server callbacks (called from background receive thread)
@@ -106,10 +115,13 @@ class UIManager:
             data.get("room_code", lobby.room_code),
             data.get("players", []),
             is_host=is_host,
+            settings=data.get("settings"),
         )
 
     def _on_game_started(self, message):
-        self._screens["game"].my_id = self.client.player_id
+        game = self._screens["game"]
+        game.reset()
+        game.my_id = self.client.player_id
         self.switch_screen("game")
 
     def _on_state_updated(self, message):
@@ -117,6 +129,14 @@ class UIManager:
         game = self._screens["game"]
         game.my_id = self.client.player_id
         game.set_game_state(data.get("state", {}))
+
+    def _on_invalid_action(self, message):
+        data = message.get("data", {})
+        self._show_screen_error(data.get("reason", "Invalid action"))
+
+    def _on_error(self, message):
+        data = message.get("data", {})
+        self._show_screen_error(data.get("message", "Network error"))
 
     def _on_reaction_started(self, message):
         self._screens["game"].handle_reaction_started(message.get("data", {}))
@@ -140,3 +160,7 @@ class UIManager:
                 self.client.connect()
             except Exception:
                 pass
+
+    def _show_screen_error(self, message):
+        if self._current_screen and hasattr(self._current_screen, "set_error"):
+            self._current_screen.set_error(message)

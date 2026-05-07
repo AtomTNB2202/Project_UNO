@@ -28,6 +28,7 @@ class Room:
         # Store game state and whether game has started
         self.game_state: Any = None
         self.game_started = False
+        self.settings: dict = {"rule_0": True, "rule_7": True, "rule_8": True}
 
         self.lock = threading.RLock()
 
@@ -58,16 +59,12 @@ class Room:
             if player_id not in self.players:
                 return
 
-            if self.game_started:
-                self.players[player_id]["connected"] = False
-                self.players[player_id]["connection"] = None
-                return
-
             del self.players[player_id]
 
             if self.host_id == player_id:
-                remaining_players = list(self.players.keys())
-                self.host_id = remaining_players[0] if remaining_players else None
+                self.assign_random_host()
+
+            self._refresh_host_flags()
 
     def mark_disconnected(self, player_id: str):
         """Keep the player in the room but mark the socket as disconnected."""
@@ -75,6 +72,16 @@ class Room:
             if player_id in self.players:
                 self.players[player_id]["connection"] = None
                 self.players[player_id]["connected"] = False
+
+    def assign_random_host(self):
+        """Choose a new host from remaining connected players."""
+        remaining_players = list(self.players.keys())
+        self.host_id = random.choice(remaining_players) if remaining_players else None
+        self._refresh_host_flags()
+
+    def _refresh_host_flags(self):
+        for player in self.players.values():
+            player["is_host"] = player["id"] == self.host_id
 
     def is_host(self, player_id: str) -> bool:
         """Return True if player_id is host."""

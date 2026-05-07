@@ -11,6 +11,7 @@ from __future__ import annotations
 import inspect
 import socket
 import threading
+import time
 import uuid
 from typing import Any, Callable, Optional
 
@@ -136,6 +137,7 @@ class Server:
             MessageType.JOIN_ROOM: self.handle_join_room,
             MessageType.LEAVE_ROOM: self.handle_leave_room,
             MessageType.START_GAME: self.handle_start_game,
+            MessageType.UPDATE_SETTINGS: self.handle_update_settings,
             MessageType.PLAY_CARD: self.handle_play_card,
             MessageType.DRAW_CARD: self.handle_draw_card,
             MessageType.CHOOSE_COLOR: self.handle_choose_color,
@@ -202,12 +204,29 @@ class Server:
         """Remove player from room and broadcast updated player list."""
         room_code = self._require(data, "room_code").upper()
         player_id = self._get_player_id(connection, data)
+        room = self.room_manager.get_room(room_code)
 
-        room = self.room_manager.leave_room(room_code, player_id)
+        if room and room.game_started:
+            self._handle_player_left_active_game(room, player_id)
+            self._unbind_connection(connection, player_id)
+            return
+        else:
+            room = self.room_manager.leave_room(room_code, player_id)
         self._unbind_connection(connection, player_id)
 
         if room:
             self.sync_manager.broadcast_player_list(room)
+
+    def handle_update_settings(self, connection, data: dict):
+        """Host updates house-rule settings; broadcast new settings to all players."""
+        room = self._get_room_from_data(data)
+        player_id = self._get_player_id(connection, data)
+        if not room.is_host(player_id):
+            return
+        new_settings = data.get("settings", {})
+        if new_settings:
+            room.settings.update(new_settings)
+        self.sync_manager.broadcast_player_list(room)
 
     def handle_start_game(self, connection, data: dict):
         """Validate host/start conditions, start game, and broadcast state."""
@@ -224,8 +243,12 @@ class Server:
             )
             return
 
-        if room.game_state is None:
-            room.game_state = self._create_game_state(room)
+        # Merge: explicit settings in message override room.settings
+        settings = {**room.settings, **data.get("settings", {})}
+        # Always create a fresh GameState so winner/state from a previous
+        # game in the same room does not carry over.
+        room.game_state = self._create_game_state(room, settings=settings)
+        room.game_started = False
 
         # Optional hook if your GameState has a start_game/start method.
         if room.game_state and hasattr(room.game_state, "start_game"):
@@ -307,9 +330,6 @@ class Server:
             player_id=player_id,
         )
 
-        if isinstance(result, dict) and result.get("reaction_result"):
-            self.sync_manager.broadcast_reaction_result(room, result["reaction_result"])
-
         self._broadcast_after_game_action(room, result)
 
     def handle_disconnect(self, connection):
@@ -319,9 +339,7 @@ class Server:
             return
 
         if room.game_started:
-            room.mark_disconnected(player_id)
-            self.sync_manager.broadcast_player_list(room)
-            self.sync_manager.broadcast_game_state(room)
+            self._handle_player_left_active_game(room, player_id)
         else:
             remaining_room = self.room_manager.leave_room(room.room_code, player_id)
             if remaining_room:
@@ -363,7 +381,7 @@ class Server:
             raise ValueError(f"Missing required field: {key}")
         return value
 
-    def _create_game_state(self, room):
+    def _create_game_state(self, room, settings=None):
         """Create GameState using a provided factory or simple dynamic import.
 
         This keeps the network layer independent from your game-core branch.
@@ -381,15 +399,16 @@ class Server:
 
         players = room.get_player_list()
         player_ids = room.get_player_ids()
+        kw = {"settings": settings} if settings else {}
 
-        # Try common constructor shapes.
-        for args in ((player_ids,), (players,), (room,), ()):  # noqa: B007
-            try:
-                return factory(*args)
-            except TypeError:
-                continue
+        # Try common constructor shapes, first with settings kwarg then without.
+        for args in ((player_ids,), (players,), (room,), ()):
+            for kwargs in (kw, {}):
+                try:
+                    return factory(*args, **kwargs)
+                except TypeError:
+                    continue
 
-        # If all signatures fail, surface the original problem clearly.
         raise ValueError("Could not construct GameState with known constructor signatures")
 
     def _call_game_method(self, game_state, method_name: str, **kwargs):
@@ -428,8 +447,15 @@ class Server:
     def _broadcast_after_game_action(self, room, result):
         """Broadcast state, reaction events, and game end when applicable."""
         if isinstance(result, dict):
-            if result.get("reaction_started"):
-                self.sync_manager.broadcast_reaction_started(room, result["reaction_started"])
+            event_data = result.get("reaction_started")
+            effect = result.get("effect")
+            if event_data is None and isinstance(effect, dict):
+                event_data = effect.get("reaction_started")
+
+            if event_data:
+                self.sync_manager.broadcast_reaction_started(room, event_data)
+                window = event_data.get("response_window", 3) if isinstance(event_data, dict) else 3
+                self._schedule_reaction_finish(room, window)
             if result.get("reaction_result"):
                 self.sync_manager.broadcast_reaction_result(room, result["reaction_result"])
 
@@ -438,6 +464,36 @@ class Server:
         winner_id = self._extract_winner_id(room.game_state, result)
         if winner_id:
             self.sync_manager.broadcast_game_ended(room, winner_id)
+
+    def _handle_player_left_active_game(self, room, player_id: str):
+        """Remove a player from an active game and finish if only one remains."""
+        if room.game_state and hasattr(room.game_state, "remove_player"):
+            room.game_state.remove_player(player_id)
+
+        remaining_room = self.room_manager.leave_room(room.room_code, player_id)
+        if not remaining_room:
+            return
+
+        self.sync_manager.broadcast_player_list(remaining_room)
+        self.sync_manager.broadcast_game_state(remaining_room)
+
+        winner_id = self._extract_winner_id(remaining_room.game_state, None)
+        if winner_id:
+            self.sync_manager.broadcast_game_ended(remaining_room, winner_id)
+
+    def _schedule_reaction_finish(self, room, window: float):
+        """Start a background timer that finalizes the reaction event after the window."""
+        def _timer():
+            time.sleep(window + 0.4)
+            try:
+                gs = room.game_state
+                if gs and hasattr(gs, "_rule_eight") and gs._rule_eight.active:
+                    reaction_result = gs.finish_reaction_event()
+                    self.sync_manager.broadcast_reaction_result(room, reaction_result)
+                    self.sync_manager.broadcast_game_state(room)
+            except Exception as exc:
+                print(f"[reaction timer] {exc}")
+        threading.Thread(target=_timer, daemon=True).start()
 
     @staticmethod
     def _extract_winner_id(game_state, result) -> Optional[str]:
@@ -450,6 +506,8 @@ class Server:
         for attr in ("winner_id", "winner"):
             value = getattr(game_state, attr, None)
             if value:
+                if isinstance(value, dict):
+                    return value.get("player_id")
                 return value
 
         for attr in ("is_game_over", "game_over"):
