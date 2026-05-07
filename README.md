@@ -1,137 +1,171 @@
-# 🧠 Game Core - Custom UNO Online
+🎨 UI - Custom UNO Online
+📌 Overview
 
-## 📌 Overview
+Module UI (User Interface) chịu trách nhiệm hiển thị toàn bộ giao diện game và xử lý tương tác người dùng.
 
-Module **Game Core** chịu trách nhiệm xử lý toàn bộ logic chính của game UNO.
+UI được xây dựng theo nguyên tắc:
 
-Phần này không phụ thuộc vào UI hoặc network.  
-UI và server chỉ gọi các hàm từ Game Core để cập nhật trạng thái game.
+Tách biệt hoàn toàn với Game Core
+Không xử lý logic game
+Chỉ hiển thị state từ server
+Gửi action qua client/network
 
----
+Trong game UNO, UI đóng vai trò rất quan trọng vì trải nghiệm người chơi phụ thuộc nhiều vào visual clarity và UX flow .
 
-## 📂 Structure
+📂 Structure
+UI/
+  components/
+    card_component.py
+    hand_view.py
+    opponent_panel.py
+    status_panel.py
+    popup_select_color.py
+    popup_select_target.py
+    reaction_button.py
+    result_screen.py
 
-```txt
-game/
-  card.py
-  deck.py
-  player.py
-  game_state.py
-  rule_engine.py
-  turn_manager.py
-🃏 card.py
+  main_menu.py
+  room_screen.py
+  lobby_screen.py
+  game_screen.py
+  ui_manager.py
+🧩 Responsibilities
+[ ] Hiển thị game state
+[ ] Hiển thị bài người chơi
+[ ] Hiển thị số bài đối thủ
+[ ] Hiển thị lượt chơi
+[ ] Hiển thị hiệu ứng (penalty, direction)
+[ ] Nhận input từ user (click, select)
+[ ] Gửi action đến client
+[ ] Hiển thị popup (color, target, reaction)
+[ ] Hiển thị kết quả game
+🖥️ Screens
+1. Main Menu
+[ ] Nút Create Room
+[ ] Nút Join Room
+[ ] Nút Quit
+2. Room Screen
+[ ] Input player name
+[ ] Input room code (join mode)
+[ ] Button confirm
+[ ] Button back
+3. Lobby Screen
+[ ] Hiển thị room code
+[ ] Danh sách player
+[ ] Nút Start Game (host only)
+[ ] Nút Leave Room
+4. Game Screen (Quan trọng nhất)
 
-Quản lý thông tin của một lá bài.
+Game screen gồm nhiều thành phần:
 
-Responsibilities
-[ ] Định nghĩa màu bài
-[ ] Định nghĩa loại bài
-[ ] Lưu thông tin card: color, type, value
-[ ] Kiểm tra card có phải number card không
-[ ] Kiểm tra card có phải action card không
-[ ] Kiểm tra card có phải wild card không
-[ ] Trả về penalty value của card
-👤 player.py
+[ ] HandView (bài của player)
+[ ] OpponentPanel (đối thủ)
+[ ] StatusPanel (trạng thái game)
+[ ] Draw button
+[ ] Play card interaction
+[ ] Popup system
+[ ] Reaction button
 
-Quản lý thông tin người chơi và bài trên tay.
+📌 Một UI tốt cần:
 
-Responsibilities
-[ ] Lưu player_id
-[ ] Lưu player name
-[ ] Lưu hand của người chơi
-[ ] Thêm 1 lá bài vào hand
-[ ] Thêm nhiều lá bài vào hand
-[ ] Xóa lá bài theo index
-[ ] Đếm số lá bài
-[ ] Kiểm tra người chơi đã hết bài chưa
-[ ] Convert player data sang dictionary
-📚 deck.py
+Rõ ràng (ai đang chơi, đang có gì xảy ra)
+Phản hồi nhanh
+Không gây nhầm lẫn cho player
+🧱 Components
+🃏 card_component.py
+[ ] Render 1 lá bài
+[ ] Hiển thị màu + value
+[ ] Detect click
+[ ] Highlight selected card
+✋ hand_view.py
+[ ] Hiển thị toàn bộ bài player
+[ ] Sắp xếp vị trí card
+[ ] Cho phép chọn card
+👥 opponent_panel.py
+[ ] Hiển thị danh sách đối thủ
+[ ] Hiển thị số lượng bài
+📊 status_panel.py
+[ ] Hiển thị current player
+[ ] Hiển thị current color
+[ ] Hiển thị direction
+[ ] Hiển thị pending penalty
+[ ] Hiển thị top discard
+🎨 popup_select_color.py
+[ ] Popup chọn màu (Wild)
+[ ] 4 button màu
+🎯 popup_select_target.py
+[ ] Popup chọn target (Rule 7)
+[ ] Danh sách player
+⚡ reaction_button.py
+[ ] Button cho Rule 8
+[ ] Chỉ click được 1 lần
+[ ] Có thể hiển thị countdown
+🏁 result_screen.py
+[ ] Hiển thị winner
+[ ] Button back to menu
+🧠 UI Flow
+MainMenu
+  ↓
+RoomScreen
+  ↓
+LobbyScreen
+  ↓
+GameScreen
+  ↓
+ResultScreen
+🔗 Integration với Network
 
-Quản lý draw pile và discard pile.
+UI không gọi Game Core trực tiếp.
 
-Responsibilities
-[ ] Tạo bộ bài UNO cơ bản
-[ ] Shuffle draw pile
-[ ] Rút 1 lá bài
-[ ] Rút nhiều lá bài
-[ ] Đưa bài vào discard pile
-[ ] Lấy top card của discard pile
-[ ] Rebuild draw pile khi hết bài
-🔄 turn_manager.py
+Flow đúng:
 
-Quản lý lượt chơi và chiều chơi.
+UI → Client → Server → GameState → Server → UI
 
-Responsibilities
-[ ] Lưu current player index
-[ ] Lưu direction hiện tại
-[ ] Chuyển sang lượt tiếp theo
-[ ] Skip người chơi tiếp theo
-[ ] Reverse chiều chơi
-[ ] Trả về direction dạng text
-✅ rule_engine.py
+Ví dụ:
 
-Kiểm tra tính hợp lệ của hành động đánh bài.
+# UI
+client.play_card(card_index)
 
-Responsibilities
-[ ] Check same color
-[ ] Check same number
-[ ] Check same action type
-[ ] Check Wild / Wild Draw Four
-[ ] Check stacking +2 / +4
-[ ] Check no-win-with-action-card rule
-🎮 game_state.py
+# Server xử lý → gửi state mới
 
-File trung tâm quản lý trạng thái toàn bộ game.
+# UI nhận:
+on_state_updated(state)
+⚠️ Important Rules
+[ ] Không viết logic game trong UI
+[ ] Không validate game rule ở UI
+[ ] Không lưu state game riêng
+[ ] Luôn lấy state từ server
+🎮 Event Handling
 
-Responsibilities
-[ ] Lưu danh sách players
-[ ] Lưu deck
-[ ] Lưu turn manager
-[ ] Lưu current color
-[ ] Lưu pending penalty
-[ ] Lưu winner
-[ ] Add player
-[ ] Remove player
-[ ] Start game
-[ ] Play card
-[ ] Draw card
-[ ] Apply card effect
-[ ] Check winner
-[ ] Export game state cho UI/network
-🔗 Relationship with Other Modules
-UI
- ↓
-network/client.py
- ↓
-network/server.py
- ↓
-game/game_state.py
- ↓
-game core files
+UI cần xử lý:
 
-Game Core là lớp xử lý logic chính.
-Server gọi Game Core để validate và cập nhật state.
-UI chỉ hiển thị state đã được xử lý.
-
-🧪 Suggested Manual Tests
-[ ] Tạo GameState
-[ ] Add 2 players
-[ ] Start game
-[ ] Check mỗi player có 7 lá
-[ ] Check discard pile có top card
-[ ] Check current player
-[ ] Test play legal card
-[ ] Test illegal card
-[ ] Test draw card
-[ ] Test skip
-[ ] Test reverse
-[ ] Test +2
-[ ] Test +4
-[ ] Test no-win-with-action-card
+[ ] Mouse click
+[ ] Card selection
+[ ] Button click
+[ ] Popup interaction
 🚀 Recommended Implementation Order
-1. card.py
-2. player.py
-3. deck.py
-4. turn_manager.py
-5. rule_engine.py
-6. game_state.py
+1. card_component.py
+2. hand_view.py
+3. status_panel.py
+4. opponent_panel.py
+5. main_menu.py
+6. room_screen.py
+7. lobby_screen.py
+8. game_screen.py
+9. ui_manager.py
+📌 Development Status
+🔲 components
+🔲 main_menu
+🔲 room_screen
+🔲 lobby_screen
+🔲 game_screen
+🔲 ui_manager
+🔲 integration with client
+💡 Notes
+UI phải đơn giản nhưng rõ ràng
+Không cần đồ họa fancy, chỉ cần:
+dễ nhìn
+dễ hiểu
+không bug
+
+UNO là game nhanh → UI phải phản hồi nhanh.

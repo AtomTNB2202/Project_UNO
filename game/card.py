@@ -22,7 +22,7 @@ class Card:
     def __init__(self, color, card_type, value=None):
         self.color = color
         self.card_type = card_type
-        self.value = value  # int 0-9 for number cards, None otherwise
+        self.value = value
 
     def is_number_card(self):
         return self.card_type == CardType.NUMBER

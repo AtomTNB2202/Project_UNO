@@ -1,4 +1,4 @@
-from game.card import Color, CardType
+from game.card import CardType
 from game.deck import Deck
 from game.player import Player
 from game.turn_manager import TurnManager
@@ -7,11 +7,15 @@ from game.custom_rules.rule_zero import RuleZero
 from game.custom_rules.rule_seven import RuleSeven
 from game.custom_rules.rule_eight import RuleEight
 from game.custom_rules.stacking_rule import StackingRule
-from config import MAX_PLAYERS, MIN_PLAYERS, INITIAL_HAND_SIZE, REACTION_TIME_LIMIT
+
+try:
+    from config import MIN_PLAYERS, MAX_PLAYERS, INITIAL_HAND_SIZE
+except ImportError:
+    MIN_PLAYERS, MAX_PLAYERS, INITIAL_HAND_SIZE = 2, 4, 7
 
 
 class GameState:
-    def __init__(self):
+    def __init__(self, players=None):
         self.players = []
         self.deck = Deck()
         self.turn_manager = TurnManager()
@@ -19,23 +23,34 @@ class GameState:
         self.current_color = None
         self.pending_penalty = 0
         self.last_penalty_value = 0
-        self.winner = None
-        self.rule_eight = RuleEight()
+        self.winner = None      # dict {"player_id": ..., "name": ...}
+        self.winner_id = None   # str — used by server._extract_winner_id
+        self._rule_eight = RuleEight()
+
+        if players:
+            # Server passes player_ids (list of strings) first; raise TypeError
+            # so it falls through to the player-dict form with correct names.
+            if all(isinstance(p, str) for p in players):
+                raise TypeError("Expected player dicts with 'id' and 'name' keys")
+            for p in players:
+                if isinstance(p, dict):
+                    pid = p.get("id") or p.get("player_id", "")
+                    name = p.get("name", "Player")
+                    if pid:
+                        self.add_player(pid, name)
 
     # ------------------------------------------------------------------
-    # Player management (pre-game only)
+    # Room setup
     # ------------------------------------------------------------------
 
     def add_player(self, player_id, name):
         if self.started:
-            raise RuntimeError("Cannot add players after the game has started.")
+            raise ValueError("Cannot add player after game has started.")
         if len(self.players) >= MAX_PLAYERS:
-            raise RuntimeError(f"Room is full (max {MAX_PLAYERS} players).")
+            raise ValueError(f"Room is full (max {MAX_PLAYERS} players).")
         self.players.append(Player(player_id, name))
 
     def remove_player(self, player_id):
-        if self.started:
-            raise RuntimeError("Cannot remove players after the game has started.")
         self.players = [p for p in self.players if p.player_id != player_id]
 
     def can_start(self):
@@ -47,27 +62,25 @@ class GameState:
 
     def start_game(self):
         if not self.can_start():
-            raise RuntimeError(
+            raise ValueError(
                 f"Need between {MIN_PLAYERS} and {MAX_PLAYERS} players to start."
             )
         self.deck.build_standard_deck()
         self.deck.shuffle()
-
         for player in self.players:
             player.add_cards(self.deck.draw_many(INITIAL_HAND_SIZE))
 
-        # Draw first discard card; skip wild cards (standard rule).
+        # First discard card must be a plain number card
         first_card = self.deck.draw_one()
-        while first_card is not None and first_card.is_wild_card():
+        while first_card and (first_card.is_wild_card() or first_card.is_action_card()):
             self.deck.put_to_discard(first_card)
             first_card = self.deck.draw_one()
-
         self.deck.put_to_discard(first_card)
-        self.current_color = first_card.color
+        self.current_color = first_card.color.value
         self.started = True
 
     # ------------------------------------------------------------------
-    # Turn helpers
+    # Helpers
     # ------------------------------------------------------------------
 
     def get_current_player(self):
@@ -78,6 +91,12 @@ class GameState:
             if p.player_id == player_id:
                 return i
         return -1
+
+    def _find_player(self, player_id):
+        for p in self.players:
+            if p.player_id == player_id:
+                return p
+        return None
 
     # ------------------------------------------------------------------
     # Core actions
@@ -92,80 +111,79 @@ class GameState:
         seven_target_id=None,
     ):
         if not self.started:
-            raise RuntimeError("The game has not started yet.")
-        if self.get_current_player().player_id != player_id:
-            raise RuntimeError("It is not your turn.")
+            raise ValueError("Game has not started.")
+        current = self.get_current_player()
+        if current.player_id != player_id:
+            raise ValueError("Not your turn.")
+        if card_index < 0 or card_index >= current.card_count():
+            raise ValueError("Invalid card index.")
 
-        player_idx = self.find_player_index(player_id)
-        player = self.players[player_idx]
-
-        if card_index < 0 or card_index >= player.card_count():
-            raise IndexError(f"Card index {card_index} is out of range.")
-
-        card = player.hand[card_index]
-        top_card = self.deck.top_discard()
+        card = current.hand[card_index]
+        top = self.deck.top_discard()
 
         if not RuleEngine.is_legal_card(
-            card, top_card, self.current_color,
-            self.pending_penalty, self.last_penalty_value
+            card, top, self.current_color,
+            self.pending_penalty, self.last_penalty_value,
         ):
-            raise ValueError("That card cannot be played right now.")
+            raise ValueError("That card cannot be played.")
 
-        # No-win-with-action-card rule: final card must be a number.
-        if player.card_count() == 1 and not RuleEngine.can_play_as_final_card(card):
-            raise ValueError("You cannot win with an action or wild card.")
+        if current.card_count() == 1 and not RuleEngine.can_play_as_final_card(card):
+            raise ValueError("Cannot win with an action or wild card.")
 
-        # Wild cards require a chosen color.
-        if card.is_wild_card() and not chosen_color:
-            raise ValueError("You must choose a color when playing a Wild card.")
-
-        # Commit the play.
-        played_card = player.remove_card(card_index)
+        played_card = current.remove_card(card_index)
         self.deck.put_to_discard(played_card)
 
-        # Update current color.
+        # Update active color
         if played_card.is_wild_card():
-            self.current_color = Color(chosen_color)
+            self.current_color = chosen_color or "RED"
         else:
-            self.current_color = played_card.color
+            self.current_color = played_card.color.value
 
-        # Apply the card's effect (also advances the turn internally).
-        effect_result = self.apply_card_effect(
+        effect = self.apply_card_effect(
             played_card, player_id, chosen_color, zero_direction, seven_target_id
         )
 
-        # Check for winner.
-        if player.has_no_cards():
-            self.winner = player_id
-            return {
-                "action": "play",
-                "card": repr(played_card),
-                "winner": player_id,
-                "effect": effect_result,
-            }
+        if current.has_no_cards():
+            self.winner = {"player_id": player_id, "name": current.name}
+            self.winner_id = player_id
 
-        return {"action": "play", "card": repr(played_card), "effect": effect_result}
+        return {
+            "played_card": played_card.to_dict(),
+            "effect": effect,
+            "winner": self.winner,
+            "winner_id": self.winner_id,
+        }
 
     def draw_card(self, player_id):
         if not self.started:
-            raise RuntimeError("The game has not started yet.")
-        if self.get_current_player().player_id != player_id:
-            raise RuntimeError("It is not your turn.")
+            raise ValueError("Game has not started.")
+        current = self.get_current_player()
+        if current.player_id != player_id:
+            raise ValueError("Not your turn.")
 
-        player = self.players[self.find_player_index(player_id)]
-
+        n = len(self.players)
         if self.pending_penalty > 0:
-            result = StackingRule.resolve_penalty(player, self.deck, self.pending_penalty)
-            state = StackingRule.reset_penalty_state()
-            self.pending_penalty = state["pending_penalty"]
-            self.last_penalty_value = state["last_penalty_value"]
-            self.turn_manager.next_turn(len(self.players))
-            return {"action": "draw_penalty", **result}
+            drawn = self.deck.draw_many(self.pending_penalty)
+            current.add_cards(drawn)
+            reset = StackingRule.reset_penalty_state()
+            self.pending_penalty = reset["pending_penalty"]
+            self.last_penalty_value = reset["last_penalty_value"]
+            self.turn_manager.next_turn(n)
+            return {
+                "drawn": [c.to_dict() for c in drawn],
+                "count": len(drawn),
+                "penalty": True,
+            }
 
         card = self.deck.draw_one()
-        player.add_card(card)
-        self.turn_manager.next_turn(len(self.players))
-        return {"action": "draw", "card": repr(card)}
+        if card:
+            current.add_card(card)
+        self.turn_manager.next_turn(n)
+        return {
+            "drawn": [card.to_dict()] if card else [],
+            "count": 1 if card else 0,
+            "penalty": False,
+        }
 
     # ------------------------------------------------------------------
     # Card effects
@@ -180,62 +198,72 @@ class GameState:
         seven_target_id=None,
     ):
         n = len(self.players)
-        result = {}
 
         if card.card_type == CardType.SKIP:
             self.turn_manager.skip_next(n)
-            result["effect"] = "skip"
+            return {"effect": "SKIP"}
 
-        elif card.card_type == CardType.REVERSE:
+        if card.card_type == CardType.REVERSE:
             self.turn_manager.reverse_direction(n)
-            # For 2-player, reverse_direction already repositioned the index
-            # so that the current player goes again; skip calling next_turn.
-            # For 3-4 players, advance normally in the reversed direction.
-            if n > 2:
-                self.turn_manager.next_turn(n)
-            result["effect"] = "reverse"
-            result["direction"] = self.turn_manager.get_direction_text()
-
-        elif card.card_type == CardType.DRAW_TWO:
-            self.pending_penalty = StackingRule.add_penalty(self.pending_penalty, card)
-            self.last_penalty_value = 2
-            self.turn_manager.next_turn(n)
-            result["effect"] = "draw_two"
-            result["pending_penalty"] = self.pending_penalty
-
-        elif card.card_type == CardType.WILD:
-            self.turn_manager.next_turn(n)
-            result["effect"] = "wild"
-            result["chosen_color"] = chosen_color
-
-        elif card.card_type == CardType.WILD_DRAW_FOUR:
-            self.pending_penalty = StackingRule.add_penalty(self.pending_penalty, card)
-            self.last_penalty_value = 4
-            self.turn_manager.next_turn(n)
-            result["effect"] = "wild_draw_four"
-            result["pending_penalty"] = self.pending_penalty
-
-        elif card.card_type == CardType.NUMBER:
-            if card.value == 0 and zero_direction:
-                rule_result = self.apply_rule_zero(zero_direction)
-                result["effect"] = "rule_zero"
-                result.update(rule_result)
-            elif card.value == 7 and seven_target_id:
-                rule_result = self.apply_rule_seven(player_id, seven_target_id)
-                result["effect"] = "rule_seven"
-                result.update(rule_result)
-            elif card.value == 8:
-                rule_result = self.start_reaction_event(player_id)
-                result["effect"] = "rule_eight"
-                result.update(rule_result)
+            if n == 2:
+                # Reverse acts like skip in 2-player: current player goes again
+                pass
             else:
-                result["effect"] = "number"
-            self.turn_manager.next_turn(n)
+                self.turn_manager.next_turn(n)
+            return {"effect": "REVERSE", "direction": self.turn_manager.get_direction_text()}
 
-        return result
+        if card.card_type == CardType.DRAW_TWO:
+            if self.pending_penalty == 0:
+                self.last_penalty_value = 2
+            self.pending_penalty = StackingRule.add_penalty(self.pending_penalty, card)
+            self.turn_manager.next_turn(n)
+            return {"effect": "DRAW_TWO", "pending_penalty": self.pending_penalty}
+
+        if card.card_type == CardType.WILD:
+            self.turn_manager.next_turn(n)
+            return {"effect": "WILD", "color": chosen_color}
+
+        if card.card_type == CardType.WILD_DRAW_FOUR:
+            if self.pending_penalty == 0:
+                self.last_penalty_value = 4
+            self.pending_penalty = StackingRule.add_penalty(self.pending_penalty, card)
+            self.turn_manager.next_turn(n)
+            return {
+                "effect": "WILD_DRAW_FOUR",
+                "pending_penalty": self.pending_penalty,
+                "color": chosen_color,
+            }
+
+        if card.card_type == CardType.NUMBER:
+            if card.value == 0:
+                direction = zero_direction
+                # Quick-and-dirty: UI sends chosen_color as proxy (RED=CW, else=CCW)
+                if direction is None and chosen_color:
+                    direction = "CLOCKWISE" if chosen_color == "RED" else "COUNTER_CLOCKWISE"
+                if direction:
+                    result = self.apply_rule_zero(direction)
+                    self.turn_manager.next_turn(n)
+                    return {"effect": "RULE_ZERO", **result}
+
+            elif card.value == 7:
+                if seven_target_id:
+                    result = self.apply_rule_seven(player_id, seven_target_id)
+                    self.turn_manager.next_turn(n)
+                    return {"effect": "RULE_SEVEN", **result}
+
+            elif card.value == 8:
+                event_result = self.start_reaction_event(player_id)
+                self.turn_manager.next_turn(n)
+                return {"effect": "RULE_EIGHT", "reaction_started": event_result}
+
+            self.turn_manager.next_turn(n)
+            return {"effect": "NUMBER"}
+
+        self.turn_manager.next_turn(n)
+        return {"effect": "NONE"}
 
     # ------------------------------------------------------------------
-    # Custom rule delegates
+    # Custom rule helpers
     # ------------------------------------------------------------------
 
     def apply_rule_zero(self, direction):
@@ -246,38 +274,35 @@ class GameState:
         return RuleSeven.apply(self.players, player_id, target_player_id)
 
     def start_reaction_event(self, player_id):
-        return self.rule_eight.start_event(self.players, REACTION_TIME_LIMIT)
+        return self._rule_eight.start_event(self.players)
 
     def submit_reaction(self, player_id):
-        return self.rule_eight.submit_response(player_id)
+        result = self._rule_eight.submit_response(player_id)
+        if self._rule_eight.is_timeout():
+            reaction_result = self.finish_reaction_event()
+            return {"submit": result, "reaction_result": reaction_result}
+        return {"submit": result}
 
     def finish_reaction_event(self):
-        return self.rule_eight.finish_event(self.players, self.deck)
+        return self._rule_eight.finish_event(self.players, self.deck)
 
     # ------------------------------------------------------------------
-    # State serialisation
+    # Serialization
     # ------------------------------------------------------------------
 
     def to_dict_for_player(self, viewer_id):
-        current_player_id = (
-            self.get_current_player().player_id if self.started and self.players else None
-        )
         top_card = self.deck.top_discard()
-        players_data = []
-        for p in self.players:
-            if p.player_id == viewer_id:
-                players_data.append(p.to_private_dict())
-            else:
-                players_data.append(p.to_public_dict())
-
+        current = self.get_current_player() if self.started else None
         return {
-            "started": self.started,
-            "current_player": current_player_id,
-            "current_color": self.current_color.value if self.current_color else None,
+            "players": [
+                p.to_private_dict() if p.player_id == viewer_id else p.to_public_dict()
+                for p in self.players
+            ],
             "top_card": top_card.to_dict() if top_card else None,
+            "current_color": self.current_color,
+            "current_player_id": current.player_id if current else None,
             "direction": self.turn_manager.get_direction_text(),
             "pending_penalty": self.pending_penalty,
             "winner": self.winner,
-            "reaction_active": self.rule_eight.active,
-            "players": players_data,
+            "started": self.started,
         }

@@ -10,6 +10,7 @@ import sys
 def main():
     try:
         from network.server import Server
+        from game.game_state import GameState
     except ImportError as error:
         print("Import error:", error)
         print("Please check your folder structure and __init__.py files.")
@@ -18,7 +19,7 @@ def main():
     host = "0.0.0.0"
     port = 5000
 
-    server = Server(host=host, port=port)
+    server = Server(host=host, port=port, game_state_factory=GameState)
 
     print(f"Starting Custom UNO Online server on {host}:{port}")
 

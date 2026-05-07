@@ -12,7 +12,7 @@ class Player:
 
     def remove_card(self, card_index):
         if card_index < 0 or card_index >= len(self.hand):
-            raise IndexError(f"Card index {card_index} out of range.")
+            raise IndexError(f"Invalid card index: {card_index}")
         return self.hand.pop(card_index)
 
     def card_count(self):
@@ -33,4 +33,5 @@ class Player:
             "player_id": self.player_id,
             "name": self.name,
             "hand": [c.to_dict() for c in self.hand],
+            "card_count": self.card_count(),
         }
