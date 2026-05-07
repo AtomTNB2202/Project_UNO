@@ -22,12 +22,26 @@ class StatusPanel:
         self._top_card_comp = None
 
     def set_state(self, game_state, my_id):
-        self.current_player = game_state.get("current_player", "")
-        self.current_color  = game_state.get("current_color")
-        self.direction      = game_state.get("direction", "CLOCKWISE")
+        # 1. Get the active player's ID
+        active_id = game_state.get("current_player_id", "")
+        
+        # 2. Check if it is my turn (compare IDs, not names)
+        self.is_my_turn = (active_id == my_id)
+        
+        # 3. Look up the player's name from the players list
+        active_name = "Unknown"
+        for player in game_state.get("players", []):
+            if player.get("player_id") == active_id:
+                active_name = player.get("name", "Unknown")
+                break
+                
+        # 4. Set the UI variables
+        self.current_player  = active_name
+        self.current_color   = game_state.get("current_color")
+        self.direction       = game_state.get("direction", "CLOCKWISE")
         self.pending_penalty = game_state.get("pending_penalty", 0)
-        self.is_my_turn     = (self.current_player == my_id)
 
+        # 5. Handle the top card
         top = game_state.get("top_card")
         if top:
             self._top_card_comp = CardComponent(top, (0, 0), (46, 66))
@@ -57,7 +71,7 @@ class StatusPanel:
 
         # Direction arrow
         dir_color = DIR_CW if self.direction == "CLOCKWISE" else DIR_CCW
-        dir_sym = "↻ CW" if self.direction == "CLOCKWISE" else "↺ CCW"
+        dir_sym = "CW" if self.direction == "CLOCKWISE" else "CCW"
         _blit(surface, _t.F_UI, dir_sym, dir_color, x, STATUS_H // 2)
         x += 110
 
