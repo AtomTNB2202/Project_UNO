@@ -54,10 +54,37 @@ class GameScreen:
         self.opp_panel.set_opponents(opponents)
         self.status_panel.set_state(state, self.my_id)
 
-        if state.get("winner"):
-            self.result_screen.set_result(state["winner"], state["players"], self.my_id)
+        winner = state.get("winner")
+
+        if winner:
+            if isinstance(winner, dict):
+                winner_id = winner.get("player_id")
+            else:
+                winner_id = winner
+
+            self.result_screen.set_result(
+                winner_id,
+                state.get("players", []),
+                self.my_id,
+            )
+        else:
+            self.result_screen.reset()
 
     # ------------------------------------------------------------------
+    def reset_for_new_game(self):
+        self.game_state = {}
+
+        self.hand_view.set_cards([])
+        self.opp_panel.set_opponents([])
+
+        self.popup_color.hide()
+        self.popup_target.hide()
+        self.reaction_btn.hide()
+        self.result_screen.reset()
+
+        self._selected_card_index = None
+        self._pending_card_type = None
+
     def render(self, surface):
         surface.fill(BG)
 

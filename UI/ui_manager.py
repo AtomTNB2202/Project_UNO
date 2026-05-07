@@ -74,6 +74,12 @@ class UIManager:
 
         # Game result screen
         elif action == "menu":
+            try:
+                self.client.leave_room()
+            except Exception:
+                pass
+
+            self._screens["game"].reset_for_new_game()
             self.switch_screen("main_menu")
         elif action == "quit":
             pygame.event.post(pygame.event.Event(pygame.QUIT))
@@ -109,7 +115,9 @@ class UIManager:
         )
 
     def _on_game_started(self, message):
-        self._screens["game"].my_id = self.client.player_id
+        game = self._screens["game"]
+        game.my_id = self.client.player_id
+        game.reset_for_new_game()
         self.switch_screen("game")
 
     def _on_state_updated(self, message):

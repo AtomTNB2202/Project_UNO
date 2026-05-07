@@ -20,12 +20,36 @@ class ResultScreen:
         self._btn_menu = None
         self._btn_quit = None
 
-    def set_result(self, winner_id, players, my_id):
+    def set_result(self, winner, players, my_id):
         self.visible = True
-        winner = next((p for p in players if p["player_id"] == winner_id), None)
-        self.winner_name = winner["name"] if winner else "Unknown"
-        self.is_winner = (winner_id == my_id)
+
+        # winner có thể là:
+        # 1. winner_id dạng string
+        # 2. dict dạng {"player_id": "...", "name": "..."}
+        if isinstance(winner, dict):
+            winner_id = winner.get("player_id")
+            winner_name = winner.get("name")
+        else:
+            winner_id = winner
+            winner_name = None
+
+        if not winner_name:
+            found = next(
+                (p for p in players if p.get("player_id") == winner_id),
+                None,
+            )
+            winner_name = found.get("name", "Unknown") if found else "Unknown"
+
+        self.winner_name = winner_name
+        self.is_winner = winner_id == my_id
         self._build_buttons()
+
+    def reset(self):
+        self.visible = False
+        self.winner_name = ""
+        self.is_winner = False
+        self._btn_menu = None
+        self._btn_quit = None
 
     def render(self, surface):
         if not self.visible:

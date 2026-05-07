@@ -65,16 +65,30 @@ class GameState:
             raise ValueError(
                 f"Need between {MIN_PLAYERS} and {MAX_PLAYERS} players to start."
             )
+
+        self.deck = Deck()
+        self.turn_manager = TurnManager()
+        self.current_color = None
+        self.pending_penalty = 0
+        self.last_penalty_value = 0
+        self.winner = None
+        self.winner_id = None
+        self.started = False
+
+        for player in self.players:
+            player.hand.clear()
+
         self.deck.build_standard_deck()
         self.deck.shuffle()
+
         for player in self.players:
             player.add_cards(self.deck.draw_many(INITIAL_HAND_SIZE))
 
-        # First discard card must be a plain number card
         first_card = self.deck.draw_one()
         while first_card and (first_card.is_wild_card() or first_card.is_action_card()):
             self.deck.put_to_discard(first_card)
             first_card = self.deck.draw_one()
+
         self.deck.put_to_discard(first_card)
         self.current_color = first_card.color.value
         self.started = True
@@ -97,6 +111,21 @@ class GameState:
             if p.player_id == player_id:
                 return p
         return None
+    
+    def _find_player_with_no_cards(self):
+        for player in self.players:
+            if player.has_no_cards():
+                return player
+        return None
+
+
+    def _set_winner(self, player):
+        self.winner = {
+            "player_id": player.player_id,
+            "name": player.name,
+        }
+        self.winner_id = player.player_id
+        self.started = False
 
     # ------------------------------------------------------------------
     # Core actions
@@ -112,6 +141,8 @@ class GameState:
     ):
         if not self.started:
             raise ValueError("Game has not started.")
+        if self.winner is not None:
+            raise ValueError("Game has already ended.")
         current = self.get_current_player()
         if current.player_id != player_id:
             raise ValueError("Not your turn.")
@@ -143,9 +174,9 @@ class GameState:
             played_card, player_id, chosen_color, zero_direction, seven_target_id
         )
 
-        if current.has_no_cards():
-            self.winner = {"player_id": player_id, "name": current.name}
-            self.winner_id = player_id
+        winner_player = self._find_player_with_no_cards()
+        if winner_player:
+            self._set_winner(winner_player)
 
         return {
             "played_card": played_card.to_dict(),

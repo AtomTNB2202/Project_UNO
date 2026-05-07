@@ -224,7 +224,19 @@ class Server:
             )
             return
 
-        if room.game_state is None:
+        game_ended = (
+            room.game_state is not None
+            and (
+                getattr(room.game_state, "winner", None) is not None
+                or getattr(room.game_state, "winner_id", None) is not None
+            )
+        )
+
+        if room.game_started and not game_ended:
+            self.sync_manager.broadcast_invalid_action(connection, "Game has already started")
+            return
+
+        if room.game_state is None or game_ended:
             room.game_state = self._create_game_state(room)
 
         # Optional hook if your GameState has a start_game/start method.
