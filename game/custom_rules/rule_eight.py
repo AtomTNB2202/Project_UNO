@@ -8,55 +8,71 @@ When a player plays an 8 card:
 - Players who do not respond before timeout are also penalized.
 """
 
+import time
+
 
 class RuleEight:
     def __init__(self):
-        # TODO: Store whether reaction event is active
-        # TODO: Store event start time
-        # TODO: Store response window duration
-        # TODO: Store responses from players
-        # TODO: Store player IDs participating in this event
-        pass
+        self.active = False
+        self.start_time = None
+        self.response_window = 3
+        self.responses = {}      # player_id -> timestamp
+        self.player_ids = []
 
     def start_event(self, players, response_window=3):
-        # TODO: Mark reaction event as active
-        # TODO: Store current time as event start time
-        # TODO: Store response window
-        # TODO: Store all player IDs
-        # TODO: Clear previous responses
-        # TODO: Return event data for broadcasting
-        pass
+        self.active = True
+        self.start_time = time.time()
+        self.response_window = response_window
+        self.player_ids = [p.player_id for p in players]
+        self.responses = {}
+        return {
+            "event": "reaction_start",
+            "response_window": response_window,
+            "players": self.player_ids,
+        }
 
     def submit_response(self, player_id):
-        # TODO: Check event is active
-        # TODO: Check player_id is part of current event
-        # TODO: Reject duplicate response
-        # TODO: Reject response after timeout if needed
-        # TODO: Store response timestamp
-        # TODO: Return response result
-        pass
+        if not self.active:
+            return {"success": False, "reason": "No active reaction event."}
+        if player_id not in self.player_ids:
+            return {"success": False, "reason": "Player is not part of this event."}
+        if player_id in self.responses:
+            return {"success": False, "reason": "Already responded."}
+        self.responses[player_id] = time.time()
+        return {"success": True, "player_id": player_id}
 
     def is_timeout(self):
-        # TODO: Check whether response window has expired
-        pass
+        if self.start_time is None:
+            return False
+        return time.time() - self.start_time >= self.response_window
 
     def get_missing_players(self):
-        # TODO: Return players who did not respond
-        pass
+        return [pid for pid in self.player_ids if pid not in self.responses]
 
     def get_latest_responders(self):
-        # TODO: If some players did not respond, return all missing players
-        # TODO: Otherwise, return the player with latest timestamp
-        pass
+        missing = self.get_missing_players()
+        if missing:
+            # All players who didn't respond in time are penalized.
+            return missing
+        # Everyone responded — penalize the one who responded last.
+        latest = max(self.responses, key=lambda pid: self.responses[pid])
+        return [latest]
 
-    def finish_event(self, players):
-        # TODO: Check event is active
-        # TODO: Find penalized players
-        # TODO: Make penalized players draw 2 cards
-        # TODO: Clear reaction event state
-        # TODO: Return result dictionary
-        pass
+    def finish_event(self, players, deck):
+        if not self.active:
+            return {"success": False, "reason": "No active reaction event."}
+        penalized_ids = self.get_latest_responders()
+        penalized_players = [p for p in players if p.player_id in penalized_ids]
+        for player in penalized_players:
+            drawn = deck.draw_many(2)
+            player.add_cards(drawn)
+        self.reset()
+        return {
+            "penalized": penalized_ids,
+        }
 
     def reset(self):
-        # TODO: Clear all reaction event state
-        pass
+        self.active = False
+        self.start_time = None
+        self.responses = {}
+        self.player_ids = []
