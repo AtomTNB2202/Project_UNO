@@ -10,22 +10,30 @@ When a player plays a 7 card:
 class RuleSeven:
     @staticmethod
     def validate_target(players, player_id, target_player_id):
-        # TODO: Check target_player_id is not None
-        # TODO: Check player_id exists
-        # TODO: Check target_player_id exists
-        # TODO: Check player_id != target_player_id
-        pass
+        if target_player_id is None:
+            raise ValueError("A target player must be specified.")
+        player_ids = {p.player_id for p in players}
+        if player_id not in player_ids:
+            raise ValueError(f"Player '{player_id}' not found.")
+        if target_player_id not in player_ids:
+            raise ValueError(f"Target player '{target_player_id}' not found.")
+        if player_id == target_player_id:
+            raise ValueError("Cannot swap hands with yourself.")
 
     @staticmethod
     def find_player(players, player_id):
-        # TODO: Find and return player by player_id
-        pass
+        for p in players:
+            if p.player_id == player_id:
+                return p
+        return None
 
     @staticmethod
     def apply(players, player_id, target_player_id):
-        # TODO: Validate target
-        # TODO: Find current player
-        # TODO: Find target player
-        # TODO: Swap their hands
-        # TODO: Return result dictionary
-        pass
+        RuleSeven.validate_target(players, player_id, target_player_id)
+        player = RuleSeven.find_player(players, player_id)
+        target = RuleSeven.find_player(players, target_player_id)
+        player.hand, target.hand = target.hand, player.hand
+        return {
+            "player_id": player_id,
+            "target_player_id": target_player_id,
+        }

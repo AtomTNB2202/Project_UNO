@@ -1,26 +1,19 @@
 class TurnManager:
     def __init__(self):
-        # TODO: store current player index
-        # TODO: store play direction
-        pass
+        self._current_index = 0
+        self._direction = 1  # 1 = clockwise, -1 = counter-clockwise
 
     def current_player_index(self):
-        # TODO: return current player index
-        pass
+        return self._current_index
 
     def next_turn(self, player_count):
-        # TODO: move to next player based on direction
-        pass
+        self._current_index = (self._current_index + self._direction) % player_count
 
     def skip_next(self, player_count):
-        # TODO: skip next player
-        pass
+        self._current_index = (self._current_index + self._direction * 2) % player_count
 
     def reverse_direction(self, player_count):
-        # TODO: reverse play direction
-        # TODO: decide behavior for 2-player match
-        pass
+        self._direction *= -1
 
     def get_direction_text(self):
-        # TODO: return CLOCKWISE or COUNTER_CLOCKWISE
-        pass
+        return "CLOCKWISE" if self._direction == 1 else "COUNTER_CLOCKWISE"

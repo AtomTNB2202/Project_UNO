@@ -1,35 +1,37 @@
 class Player:
     def __init__(self, player_id, name):
-        # TODO: store player id
-        # TODO: store player name
-        # TODO: initialize empty hand
-        pass
+        self.player_id = player_id
+        self.name = name
+        self.hand = []
 
     def add_card(self, card):
-        # TODO: add one card to player's hand
-        pass
+        self.hand.append(card)
 
     def add_cards(self, cards):
-        # TODO: add multiple cards to player's hand
-        pass
+        self.hand.extend(cards)
 
     def remove_card(self, card_index):
-        # TODO: remove and return card by index
-        # TODO: validate card_index
-        pass
+        if card_index < 0 or card_index >= len(self.hand):
+            raise IndexError(f"Invalid card index: {card_index}")
+        return self.hand.pop(card_index)
 
     def card_count(self):
-        # TODO: return number of cards in hand
-        pass
+        return len(self.hand)
 
     def has_no_cards(self):
-        # TODO: return True if player has no cards
-        pass
+        return len(self.hand) == 0
 
     def to_public_dict(self):
-        # TODO: return data visible to other players
-        pass
+        return {
+            "player_id": self.player_id,
+            "name": self.name,
+            "card_count": self.card_count(),
+        }
 
     def to_private_dict(self):
-        # TODO: return data visible only to this player
-        pass
+        return {
+            "player_id": self.player_id,
+            "name": self.name,
+            "hand": [c.to_dict() for c in self.hand],
+            "card_count": self.card_count(),
+        }

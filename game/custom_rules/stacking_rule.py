@@ -8,45 +8,39 @@ Rules:
 - First player who cannot or chooses not to stack draws full penalty and loses turn.
 """
 
+from game.card import CardType
+
 
 class StackingRule:
     @staticmethod
     def get_penalty_value(card):
-        # TODO: Return 2 if card is Draw Two
-        # TODO: Return 4 if card is Wild Draw Four
-        # TODO: Return 0 otherwise
-        pass
+        if card.card_type == CardType.DRAW_TWO:
+            return 2
+        if card.card_type == CardType.WILD_DRAW_FOUR:
+            return 4
+        return 0
 
     @staticmethod
     def is_penalty_card(card):
-        # TODO: Return True if card is +2 or +4
-        pass
+        return card.card_type in (CardType.DRAW_TWO, CardType.WILD_DRAW_FOUR)
 
     @staticmethod
     def can_stack(card, last_penalty_value):
-        # TODO: Check card is penalty card
-        # TODO: Check card penalty value >= last_penalty_value
-        pass
+        if not StackingRule.is_penalty_card(card):
+            return False
+        # After +4 only +4 can stack; after +2 both +2 and +4 can stack.
+        return StackingRule.get_penalty_value(card) >= last_penalty_value
 
     @staticmethod
     def add_penalty(current_penalty, card):
-        # TODO: Add card penalty value to current pending penalty
-        # TODO: Return new pending penalty
-        pass
+        return current_penalty + StackingRule.get_penalty_value(card)
 
     @staticmethod
     def resolve_penalty(player, deck, pending_penalty):
-        # TODO: Draw pending_penalty cards from deck
-        # TODO: Add drawn cards to player hand
-        # TODO: Return result dictionary
-        pass
+        drawn = deck.draw_many(pending_penalty)
+        player.add_cards(drawn)
+        return {"drawn": [repr(c) for c in drawn], "count": pending_penalty}
 
     @staticmethod
     def reset_penalty_state():
-        # TODO: Return default penalty state
-        # Example:
-        # {
-        #   "pending_penalty": 0,
-        #   "last_penalty_value": 0
-        # }
-        pass
+        return {"pending_penalty": 0, "last_penalty_value": 0}
