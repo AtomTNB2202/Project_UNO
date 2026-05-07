@@ -1,171 +1,93 @@
-🎨 UI - Custom UNO Online
-📌 Overview
+# Custom UNO Online
 
-Module UI (User Interface) chịu trách nhiệm hiển thị toàn bộ giao diện game và xử lý tương tác người dùng.
+## Overview
 
-UI được xây dựng theo nguyên tắc:
+Custom UNO Online is a Python/Pygame multiplayer UNO game for 2 to 4 players.
+It includes a host-authoritative socket server, synchronized game state, standard
+UNO gameplay, custom rules, and a playable UI.
 
-Tách biệt hoàn toàn với Game Core
-Không xử lý logic game
-Chỉ hiển thị state từ server
-Gửi action qua client/network
+## Features
 
-Trong game UNO, UI đóng vai trò rất quan trọng vì trải nghiệm người chơi phụ thuộc nhiều vào visual clarity và UX flow .
+- Create and join rooms with a room code
+- Host-controlled match start
+- 2 to 4 player multiplayer over sockets
+- Server-authoritative shuffling, dealing, validation, turn order, effects, and win checking
+- Standard UNO cards: number, Skip, Reverse, Draw Two, Wild, Wild Draw Four
+- Custom Rule 0: choose direction and pass hands
+- Custom Rule 7: choose a target and swap hands
+- Custom Rule 8: reaction event, slowest responder draws 2 cards
+- Stacking penalties for +2 and +4
+- Result screen and disconnect handling
 
-📂 Structure
-UI/
-  components/
-    card_component.py
-    hand_view.py
-    opponent_panel.py
-    status_panel.py
-    popup_select_color.py
-    popup_select_target.py
-    reaction_button.py
-    result_screen.py
+## Project Structure
 
-  main_menu.py
-  room_screen.py
-  lobby_screen.py
-  game_screen.py
-  ui_manager.py
-🧩 Responsibilities
-[ ] Hiển thị game state
-[ ] Hiển thị bài người chơi
-[ ] Hiển thị số bài đối thủ
-[ ] Hiển thị lượt chơi
-[ ] Hiển thị hiệu ứng (penalty, direction)
-[ ] Nhận input từ user (click, select)
-[ ] Gửi action đến client
-[ ] Hiển thị popup (color, target, reaction)
-[ ] Hiển thị kết quả game
-🖥️ Screens
-1. Main Menu
-[ ] Nút Create Room
-[ ] Nút Join Room
-[ ] Nút Quit
-2. Room Screen
-[ ] Input player name
-[ ] Input room code (join mode)
-[ ] Button confirm
-[ ] Button back
-3. Lobby Screen
-[ ] Hiển thị room code
-[ ] Danh sách player
-[ ] Nút Start Game (host only)
-[ ] Nút Leave Room
-4. Game Screen (Quan trọng nhất)
+```text
+Project_UNO/
+  main.py
+  run_server.py
+  config.py
+  requirements.txt
 
-Game screen gồm nhiều thành phần:
+  game/
+    card.py
+    deck.py
+    player.py
+    game_state.py
+    rule_engine.py
+    turn_manager.py
+    custom_rules/
 
-[ ] HandView (bài của player)
-[ ] OpponentPanel (đối thủ)
-[ ] StatusPanel (trạng thái game)
-[ ] Draw button
-[ ] Play card interaction
-[ ] Popup system
-[ ] Reaction button
+  network/
+    client.py
+    server.py
+    protocol.py
+    room_manager.py
+    sync_manager.py
 
-📌 Một UI tốt cần:
+  UI/
+    components/
+    main_menu.py
+    room_screen.py
+    lobby_screen.py
+    game_screen.py
+    rules_screen.py
+    ui_manager.py
+```
 
-Rõ ràng (ai đang chơi, đang có gì xảy ra)
-Phản hồi nhanh
-Không gây nhầm lẫn cho player
-🧱 Components
-🃏 card_component.py
-[ ] Render 1 lá bài
-[ ] Hiển thị màu + value
-[ ] Detect click
-[ ] Highlight selected card
-✋ hand_view.py
-[ ] Hiển thị toàn bộ bài player
-[ ] Sắp xếp vị trí card
-[ ] Cho phép chọn card
-👥 opponent_panel.py
-[ ] Hiển thị danh sách đối thủ
-[ ] Hiển thị số lượng bài
-📊 status_panel.py
-[ ] Hiển thị current player
-[ ] Hiển thị current color
-[ ] Hiển thị direction
-[ ] Hiển thị pending penalty
-[ ] Hiển thị top discard
-🎨 popup_select_color.py
-[ ] Popup chọn màu (Wild)
-[ ] 4 button màu
-🎯 popup_select_target.py
-[ ] Popup chọn target (Rule 7)
-[ ] Danh sách player
-⚡ reaction_button.py
-[ ] Button cho Rule 8
-[ ] Chỉ click được 1 lần
-[ ] Có thể hiển thị countdown
-🏁 result_screen.py
-[ ] Hiển thị winner
-[ ] Button back to menu
-🧠 UI Flow
-MainMenu
-  ↓
-RoomScreen
-  ↓
-LobbyScreen
-  ↓
-GameScreen
-  ↓
-ResultScreen
-🔗 Integration với Network
+## Requirements
 
-UI không gọi Game Core trực tiếp.
+- Python 3.10+
+- pygame
 
-Flow đúng:
+Install dependencies:
 
-UI → Client → Server → GameState → Server → UI
+```bash
+pip install -r requirements.txt
+```
 
-Ví dụ:
+## How To Run
 
-# UI
-client.play_card(card_index)
+Start the server:
 
-# Server xử lý → gửi state mới
+```bash
+python run_server.py
+```
 
-# UI nhận:
-on_state_updated(state)
-⚠️ Important Rules
-[ ] Không viết logic game trong UI
-[ ] Không validate game rule ở UI
-[ ] Không lưu state game riêng
-[ ] Luôn lấy state từ server
-🎮 Event Handling
+Start each client in a separate terminal:
 
-UI cần xử lý:
+```bash
+python main.py
+```
 
-[ ] Mouse click
-[ ] Card selection
-[ ] Button click
-[ ] Popup interaction
-🚀 Recommended Implementation Order
-1. card_component.py
-2. hand_view.py
-3. status_panel.py
-4. opponent_panel.py
-5. main_menu.py
-6. room_screen.py
-7. lobby_screen.py
-8. game_screen.py
-9. ui_manager.py
-📌 Development Status
-🔲 components
-🔲 main_menu
-🔲 room_screen
-🔲 lobby_screen
-🔲 game_screen
-🔲 ui_manager
-🔲 integration with client
-💡 Notes
-UI phải đơn giản nhưng rõ ràng
-Không cần đồ họa fancy, chỉ cần:
-dễ nhìn
-dễ hiểu
-không bug
+One player creates a room and shares the room code. Other players join using that
+code. The host can start once at least 2 players are in the room.
 
-UNO là game nhanh → UI phải phản hồi nhanh.
+## Gameplay Notes
+
+The server is the final authority. Clients only send requests such as play card,
+draw card, choose color, choose target, or submit reaction. The server validates
+each request and broadcasts the resulting state.
+
+If a player leaves during a match, they are removed from the active game. The game
+continues while at least 2 players remain. If only 1 player remains, that player
+wins. If the host leaves and at least 2 players remain, a new host is assigned.
